@@ -126,13 +126,13 @@ const styles = StyleSheet.create({
 
 const Index = () => {
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [userName, setUserName] = useState('')
   // userInfo can be either an object (user data) or null when not signed in
   const [userInfo, setUserInfo] = useState<Record<string, any> | null>(null);
 
   const handleLogin = () => {
-    if (email && password) {
-      console.log('Login with:', { email, password })
+    if (email && userName) {
+      console.log('Login with:', { email, userName })
       // Add your login logic here
     }
   }
@@ -201,21 +201,21 @@ const Index = () => {
 
         {/* Password Input */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Password</Text>
+          <Text style={styles.label}>User Name</Text>
           <TextInput
             style={styles.input}
-            placeholder='Enter your password'
+            placeholder='Enter your user name'
             placeholderTextColor='#999'
-            value={password}
-            onChangeText={setPassword}
+            value={userName}
+            onChangeText={setUserName}
             secureTextEntry
           />
         </View>
 
         {/* Login Button */}
-        {/* <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
+        <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
           <Text style={styles.loginButtonText}>Login</Text>
-        </TouchableOpacity> */}
+        </TouchableOpacity>
 
 
         <GoogleSigninButton
@@ -240,13 +240,7 @@ const Index = () => {
           <View style={styles.dividerLine} />
         </View>
 
-        {/* Google Sign In Button */}
-        <TouchableOpacity
-          style={styles.googleButton}
-          onPress={() => console.log('Google sign in pressed')}
-        >
-          <Text style={styles.googleButtonText}>Sign in with Google</Text>
-        </TouchableOpacity>
+    
 
         {/* Sign Up Link */}
         <View style={styles.signUpContainer}>
