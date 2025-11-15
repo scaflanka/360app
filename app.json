@@ -15,6 +15,7 @@
       }
     },
     "android": {
+      "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyBoqhQWOBssPSZpeWLuVEiaqF0Qzu2oQqk"
@@ -35,6 +36,8 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
       "expo-router",
       [
         "expo-splash-screen",

@@ -55,6 +55,7 @@ const isValidCoordinate = (lat: number, lon: number): boolean => {
 
 const MapScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
+  const [loadingCircles, setLoadingCircles] = useState(false);
   const [location, setLocation] = useState<UserLocation | null>(null);
   const [circles, setCircles] = useState<CircleData[]>([]);
   const [hasArrived, setHasArrived] = useState(false);
@@ -96,6 +97,7 @@ const MapScreen: React.FC = () => {
 
   const loadCircles = async () => {
     try {
+      setLoadingCircles(true);
       const res = await authenticatedFetch("https://api.medi.lk/api/circles", {
         headers: {
           "Content-Type": "application/json",
@@ -115,6 +117,8 @@ const MapScreen: React.FC = () => {
       else if (data?.data) setCircles(data.data);
     } catch (e) {
       console.warn("Circle API error:", e);
+    } finally {
+      setLoadingCircles(false);
     }
   };
 
@@ -264,7 +268,14 @@ const MapScreen: React.FC = () => {
         </View>
         <View style={styles.drawerContent}>
           <Text style={styles.drawerTitle}>Circles</Text>
-          <Text style={styles.drawerSub}>You have {circles.length} circle(s)</Text>
+          {loadingCircles ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#2563eb" />
+              <Text style={styles.drawerSub}>Loading circles...</Text>
+            </View>
+          ) : (
+            <Text style={styles.drawerSub}>You have {circles.length} circle(s)</Text>
+          )}
 
           <TouchableOpacity
             style={styles.drawerButton}
@@ -309,6 +320,12 @@ const styles = StyleSheet.create({
   drawerContent: { padding: 16 },
   drawerTitle: { fontSize: 18, fontWeight: "700" },
   drawerSub: { marginTop: 4, color: "#6b7280" },
+  loadingContainer: { 
+    marginTop: 4, 
+    flexDirection: "row", 
+    alignItems: "center", 
+    gap: 8 
+  },
   drawerButton: {
     marginTop: 16,
     backgroundColor: "#2563eb",

@@ -5,10 +5,11 @@
 //   statusCodes,
 // } from '@react-native-google-signin/google-signin';
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import { registerDeviceAndGetFCMToken, saveFCMTokenToAPI } from '@/utils/permissions';
 
 
 
@@ -75,6 +76,9 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         fontSize: 16,
     },
+    loginButtonDisabled: {
+        opacity: 0.6,
+    },
     forgotPasswordButton: {
         alignItems: 'center',
         marginBottom: 24,
@@ -134,11 +138,13 @@ const LogInScreen = () => {
     const router = useRouter();
     const [email, setEmail] = useState('')
     const [userName, setUserName] = useState('')
+    const [loading, setLoading] = useState(false)
     // userInfo can be either an object (user data) or null when not signed in
     // const [userInfo, setUserInfo] = useState<Record<string, any> | null>(null);
 
     const handleLogin = async () => {
         if (email && userName) {
+            setLoading(true);
             console.log('Logging in with:', { email, userName });
 
             try {
@@ -165,6 +171,17 @@ const LogInScreen = () => {
                     await AsyncStorage.setItem('authToken', data.token);
                     await AsyncStorage.setItem('refreshToken', data.refreshToken);
 
+                    // Register device for FCM and save token to API
+                    try {
+                        const fcmToken = await registerDeviceAndGetFCMToken();
+                        if (fcmToken) {
+                            await saveFCMTokenToAPI(fcmToken);
+                        }
+                    } catch (error) {
+                        console.error('Error registering FCM token after login:', error);
+                        // Don't block login if FCM token registration fails
+                    }
+
                     // 👉 Navigate or update state
                     alert('Login successful!');
                     // After login, open the Map screen using expo-router
@@ -172,10 +189,12 @@ const LogInScreen = () => {
                 } else {
                     console.error('❌ Login failed:', data);
                     alert('Login failed. Please check your details.');
+                    setLoading(false);
                 }
             } catch (error) {
                 console.error('⚠️ Error during login:', error);
                 alert('An error occurred during login. Try again.');
+                setLoading(false);
             }
         } else {
             alert('Please enter both email and username.');
@@ -225,8 +244,16 @@ const LogInScreen = () => {
                 </View>
 
                 {/* Login Button */}
-                <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-                    <Text style={styles.loginButtonText}>Login</Text>
+                <TouchableOpacity 
+                    style={[styles.loginButton, loading && styles.loginButtonDisabled]} 
+                    onPress={handleLogin}
+                    disabled={loading}
+                >
+                    {loading ? (
+                        <ActivityIndicator color="#fff" />
+                    ) : (
+                        <Text style={styles.loginButtonText}>Login</Text>
+                    )}
                 </TouchableOpacity>
 
                 {/* 
