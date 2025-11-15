@@ -781,9 +781,6 @@ const CirclesModal: React.FC<CirclesModalProps> = ({
                           disabled={!isCreator}
                         >
                           <Text style={styles.circleName}>{item.name || "Unnamed Circle"}</Text>
-                          <Text style={styles.circleLocations}>
-                            {item.Locations?.length || 0} location(s)
-                          </Text>
                           {!isCreator && (
                             <Text style={styles.circleDisabledText}>
                               Only creator can view details
