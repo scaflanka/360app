@@ -119,21 +119,21 @@ const MapScreen: React.FC = () => {
     const loadData = async () => {
       try {
         // Always use real location
-          const { status } = await Location.requestForegroundPermissionsAsync();
-          if (status === "granted") {
-            const pos = await Location.getCurrentPositionAsync({
-              accuracy: Location.Accuracy.Highest,
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === "granted") {
+          const pos = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Highest,
+          });
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          if (isValidCoordinate(lat, lon)) {
+            setLocation({
+              latitude: lat,
+              longitude: lon,
             });
-            const lat = pos.coords.latitude;
-            const lon = pos.coords.longitude;
-            if (isValidCoordinate(lat, lon)) {
-              setLocation({
-                latitude: lat,
-                longitude: lon,
-              });
-            }
-          } else {
-            Alert.alert("Permission Denied", "Location permission is required.");
+          }
+        } else {
+          Alert.alert("Permission Denied", "Location permission is required.");
         }
       } catch (e) {
         console.warn("Location error:", e);
@@ -197,9 +197,12 @@ const MapScreen: React.FC = () => {
     longitude: number
   ) => {
     const locationKey = `${circleId}-${locationId}`;
-    
+
     // Skip if already reached or currently being marked
-    if (reachedLocationsRef.current.has(locationKey) || markingLocationsRef.current.has(locationKey)) {
+    if (
+      reachedLocationsRef.current.has(locationKey) ||
+      markingLocationsRef.current.has(locationKey)
+    ) {
       return;
     }
 
@@ -269,39 +272,24 @@ const MapScreen: React.FC = () => {
         );
 
         if (firstLocation) {
-          const d = getDistance(
-            userLat,
-            userLon,
-            firstLocation.latitude,
-            firstLocation.longitude
-          );
+          const d = getDistance(userLat, userLon, firstLocation.latitude, firstLocation.longitude);
           const radius = firstLocation.metadata?.radius ?? c.metadata?.radius ?? 100;
-          
+
           if (d <= radius) {
             insideCircle = true;
-            
-            // Check if current user is NOT the creator
-            const isCreator =
-              currentUserId &&
-              (c.creatorId === currentUserId || c.creator?.id === currentUserId);
-            
-            // Only mark location as reached if user is not the creator
-            if (!isCreator && firstLocation.id) {
+
+            // Mark location as reached for all users (creator/admin/member)
+            if (firstLocation.id) {
               const locationKey = `${c.id}-${firstLocation.id}`;
-              
+
               // Check if we've already reached this location
               const alreadyReached = reachedLocationsRef.current.has(locationKey);
               // Check if we've already shown an alert for this location
               const alreadyAlerted = alertedLocationsRef.current.has(locationKey);
-              
+
               // Mark location as reached (function will skip if already reached)
-              markLocationReached(
-                c.id,
-                firstLocation.id,
-                userLat,
-                userLon
-              );
-              
+              markLocationReached(c.id, firstLocation.id, userLat, userLon);
+
               // Show alert only if we haven't shown it for this location yet
               // Check both the reached locations ref and the alerted locations ref
               if (!alreadyReached && !alreadyAlerted && !hasArrived) {
@@ -381,21 +369,17 @@ const MapScreen: React.FC = () => {
   // Logout
   // -----------------------------
   const handleLogout = () => {
-    Alert.alert(
-      "Logout",
-      "Are you sure you want to logout?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Logout",
-          style: "destructive",
-          onPress: async () => {
-            await logout();
-            router.replace("/screens/LogInScreen");
-          },
+    Alert.alert("Logout", "Are you sure you want to logout?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Logout",
+        style: "destructive",
+        onPress: async () => {
+          await logout();
+          router.replace("/screens/LogInScreen");
         },
-      ]
-    );
+      },
+    ]);
   };
 
   // -----------------------------
@@ -430,21 +414,24 @@ const MapScreen: React.FC = () => {
         onMapReady={() => {
           // Ensure map is ready before animating
           if (mapRef.current && location) {
-            mapRef.current.animateToRegion({
-              latitude: location.latitude,
-              longitude: location.longitude,
-              latitudeDelta: 0.005,
-              longitudeDelta: 0.005,
-            }, 0);
+            mapRef.current.animateToRegion(
+              {
+                latitude: location.latitude,
+                longitude: location.longitude,
+                latitudeDelta: 0.005,
+                longitudeDelta: 0.005,
+              },
+              0
+            );
           }
         }}
       >
-        <Marker 
+        <Marker
           coordinate={{
             latitude: location.latitude,
             longitude: location.longitude,
-          }} 
-          title="You are here" 
+          }}
+          title="You are here"
           pinColor="black"
           tracksViewChanges={false}
         />

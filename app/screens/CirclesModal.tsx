@@ -1251,7 +1251,7 @@ const styles = StyleSheet.create({
   fab: {
     position: "absolute",
     right: 16,
-    bottom: 32,
+    bottom: 50,
     backgroundColor: "#2563eb",
     borderRadius: 28,
     width: 56,
@@ -1491,7 +1491,7 @@ const styles = StyleSheet.create({
   inviteFab: {
     position: "absolute",
     right: 16,
-    bottom: 32,
+    bottom: 50,
     backgroundColor: "#2563eb",
     borderRadius: 28,
     width: 56,
