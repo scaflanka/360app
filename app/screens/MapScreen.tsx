@@ -12,7 +12,9 @@ import {
   View,
 } from "react-native";
 import MapView, { Circle, Marker, PROVIDER_GOOGLE } from "react-native-maps";
-import { authenticatedFetch } from "../../utils/auth";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { API_BASE_URL, authenticatedFetch, logout } from "../../utils/auth";
+import CirclesModal from "./CirclesModal";
 
 const { height: windowHeight } = Dimensions.get("window");
 const DRAWER_HEIGHT = Math.round(windowHeight * 0.5);
@@ -30,6 +32,11 @@ interface CircleData {
   name?: string;
   Locations?: LocationPoint[];
   metadata?: { radius?: number };
+  creatorId?: string;
+  creator?: {
+    id: string;
+    name?: string;
+  };
 }
 
 interface UserLocation {
@@ -59,9 +66,44 @@ const MapScreen: React.FC = () => {
   const [location, setLocation] = useState<UserLocation | null>(null);
   const [circles, setCircles] = useState<CircleData[]>([]);
   const [hasArrived, setHasArrived] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const reachedLocationsRef = useRef<Set<string>>(new Set());
 
   const drawerAnim = useRef(new Animated.Value(DRAWER_HEIGHT)).current;
   const [isOpen, setIsOpen] = useState(false);
+
+  // Circles modal state
+  const [isCirclesModalOpen, setIsCirclesModalOpen] = useState(false);
+
+  // Safe area insets
+  const insets = useSafeAreaInsets();
+
+  // -----------------------------
+  // Load current user ID
+  // -----------------------------
+  useEffect(() => {
+    const loadCurrentUser = async () => {
+      try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/profile`, {
+          headers: {
+            "Content-Type": "application/json",
+            accept: "application/json",
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const userData = data.data || data;
+          if (userData?.id) {
+            setCurrentUserId(userData.id);
+          }
+        }
+      } catch (error) {
+        console.error("Error loading current user:", error);
+      }
+    };
+    loadCurrentUser();
+  }, []);
 
   // -----------------------------
   // Load location and circles
@@ -98,7 +140,7 @@ const MapScreen: React.FC = () => {
   const loadCircles = async () => {
     try {
       setLoadingCircles(true);
-      const res = await authenticatedFetch("https://api.medi.lk/api/circles", {
+      const res = await authenticatedFetch(`${API_BASE_URL}/circles`, {
         headers: {
           "Content-Type": "application/json",
           accept: "application/json",
@@ -138,6 +180,57 @@ const MapScreen: React.FC = () => {
   };
 
   // -----------------------------
+  // Mark location as reached
+  // -----------------------------
+  const markLocationReached = async (
+    circleId: number,
+    locationId: number | string,
+    latitude: number,
+    longitude: number
+  ) => {
+    const locationKey = `${circleId}-${locationId}`;
+    
+    // Skip if already reached
+    if (reachedLocationsRef.current.has(locationKey)) {
+      return;
+    }
+
+    try {
+      const response = await authenticatedFetch(
+        `${API_BASE_URL}/circles/${circleId}/mark-location-reached`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            accept: "application/json",
+          },
+          body: JSON.stringify({
+            locationId: locationId.toString(),
+            latitude: latitude,
+            longitude: longitude,
+          }),
+        }
+      );
+
+      if (response.status === 401) {
+        router.replace("/screens/LogInScreen");
+        return;
+      }
+
+      if (response.ok) {
+        // Mark as reached to prevent duplicate calls
+        reachedLocationsRef.current.add(locationKey);
+        console.log(`Location ${locationId} marked as reached for circle ${circleId}`);
+      } else {
+        const data = await response.json();
+        console.error("Failed to mark location as reached:", data);
+      }
+    } catch (error) {
+      console.error("Error marking location as reached:", error);
+    }
+  };
+
+  // -----------------------------
   // Watch location
   // -----------------------------
   useEffect(() => {
@@ -148,14 +241,39 @@ const MapScreen: React.FC = () => {
       let insideCircle = false;
 
       circles.forEach((c) => {
-        (c.Locations ?? []).forEach((loc) => {
-          // Only check distance if both user and circle coordinates are valid
-          if (isValidCoordinate(loc.latitude, loc.longitude)) {
-            const d = getDistance(userLat, userLon, loc.latitude, loc.longitude);
-            const radius = loc.metadata?.radius ?? c.metadata?.radius ?? 100;
-            if (d <= radius) insideCircle = true;
+        // Get first available location for each circle
+        const firstLocation = (c.Locations ?? []).find((loc) =>
+          isValidCoordinate(loc.latitude, loc.longitude)
+        );
+
+        if (firstLocation) {
+          const d = getDistance(
+            userLat,
+            userLon,
+            firstLocation.latitude,
+            firstLocation.longitude
+          );
+          const radius = firstLocation.metadata?.radius ?? c.metadata?.radius ?? 100;
+          
+          if (d <= radius) {
+            insideCircle = true;
+            
+            // Check if current user is NOT the creator
+            const isCreator =
+              currentUserId &&
+              (c.creatorId === currentUserId || c.creator?.id === currentUserId);
+            
+            // Only mark location as reached if user is not the creator
+            if (!isCreator && firstLocation.id) {
+              markLocationReached(
+                c.id,
+                firstLocation.id,
+                userLat,
+                userLon
+              );
+            }
           }
-        });
+        }
       });
 
       if (insideCircle && !hasArrived) {
@@ -193,7 +311,7 @@ const MapScreen: React.FC = () => {
     return () => {
       subscription?.remove();
     };
-  }, [circles, hasArrived]);
+  }, [circles, hasArrived, currentUserId]);
 
   // -----------------------------
   // Drawer toggle
@@ -204,6 +322,38 @@ const MapScreen: React.FC = () => {
       duration: 300,
       useNativeDriver: true,
     }).start(() => setIsOpen(!isOpen));
+  };
+
+  // -----------------------------
+  // Circles modal toggle
+  // -----------------------------
+  const toggleCirclesModal = () => {
+    setIsCirclesModalOpen(!isCirclesModalOpen);
+  };
+
+  const handleCloseCirclesModal = () => {
+    setIsCirclesModalOpen(false);
+  };
+
+  // -----------------------------
+  // Logout
+  // -----------------------------
+  const handleLogout = () => {
+    Alert.alert(
+      "Logout",
+      "Are you sure you want to logout?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Logout",
+          style: "destructive",
+          onPress: async () => {
+            await logout();
+            router.replace("/screens/LogInScreen");
+          },
+        },
+      ]
+    );
   };
 
   // -----------------------------
@@ -235,34 +385,43 @@ const MapScreen: React.FC = () => {
       >
         <Marker coordinate={location} title="You are here" pinColor="black" />
 
-        {circles.map((c) =>
-          (c.Locations ?? [])
-            .filter((loc) => isValidCoordinate(loc.latitude, loc.longitude))
-            .map((loc, idx) => {
-              const key = `${c.id}-${loc.id ?? idx}`;
-              const radius = loc.metadata?.radius ?? c.metadata?.radius ?? 100;
+        {circles.map((c) => {
+          // Get first available location for each circle
+          const firstLocation = (c.Locations ?? []).find((loc) =>
+            isValidCoordinate(loc.latitude, loc.longitude)
+          );
 
-              return (
-                <React.Fragment key={key}>
-                  <Marker
-                    coordinate={{ latitude: loc.latitude, longitude: loc.longitude }}
-                    title={loc.name ?? c.name}
-                    pinColor="blue"
-                  />
-                  <Circle
-                    center={{ latitude: loc.latitude, longitude: loc.longitude }}
-                    radius={radius}
-                    strokeWidth={2}
-                    strokeColor="rgba(0,112,255,0.8)"
-                    fillColor="rgba(0,112,255,0.2)"
-                  />
-                </React.Fragment>
-              );
-            })
-        )}
+          if (!firstLocation) return null;
+
+          const key = `${c.id}-${firstLocation.id ?? 0}`;
+          const radius = firstLocation.metadata?.radius ?? c.metadata?.radius ?? 100;
+
+          return (
+            <React.Fragment key={key}>
+              <Marker
+                coordinate={{
+                  latitude: firstLocation.latitude,
+                  longitude: firstLocation.longitude,
+                }}
+                title={firstLocation.name ?? c.name}
+                pinColor="blue"
+              />
+              <Circle
+                center={{
+                  latitude: firstLocation.latitude,
+                  longitude: firstLocation.longitude,
+                }}
+                radius={radius}
+                strokeWidth={2}
+                strokeColor="rgba(0,112,255,0.8)"
+                fillColor="rgba(0,112,255,0.2)"
+              />
+            </React.Fragment>
+          );
+        })}
       </MapView>
 
-      <Animated.View style={[styles.drawer, { transform: [{ translateY: drawerAnim }] }]}>
+      {/* <Animated.View style={[styles.drawer, { transform: [{ translateY: drawerAnim }] }]}>
         <View style={styles.drawerHandleContainer}>
           <View style={styles.handle} />
         </View>
@@ -288,11 +447,29 @@ const MapScreen: React.FC = () => {
             <Text style={styles.closeButtonText}>{isOpen ? "Close" : "Open"}</Text>
           </TouchableOpacity>
         </View>
-      </Animated.View>
+      </Animated.View> */}
 
-      <TouchableOpacity style={styles.fab} onPress={toggleDrawer}>
-        <Text style={styles.fabText}>☰</Text>
+      <TouchableOpacity
+        style={[styles.menuButton, { top: insets.top + 8, left: 16 }]}
+        onPress={toggleCirclesModal}
+      >
+        <Text style={styles.menuButtonText}>☰</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.profileButton, { top: insets.top + 8, right: 16 }]}
+        onPress={handleLogout}
+      >
+        <Text style={styles.profileButtonText}>👤</Text>
+      </TouchableOpacity>
+
+      <CirclesModal
+        isOpen={isCirclesModalOpen}
+        onClose={handleCloseCirclesModal}
+        onRefresh={loadCircles}
+        circles={circles}
+        loadingCircles={loadingCircles}
+      />
     </View>
   );
 };
@@ -320,11 +497,11 @@ const styles = StyleSheet.create({
   drawerContent: { padding: 16 },
   drawerTitle: { fontSize: 18, fontWeight: "700" },
   drawerSub: { marginTop: 4, color: "#6b7280" },
-  loadingContainer: { 
-    marginTop: 4, 
-    flexDirection: "row", 
-    alignItems: "center", 
-    gap: 8 
+  loadingContainer: {
+    marginTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   drawerButton: {
     marginTop: 16,
@@ -337,10 +514,8 @@ const styles = StyleSheet.create({
   closeButton: { marginTop: 12, alignItems: "center" },
   closeButtonText: { color: "#2563eb", fontWeight: "700" },
 
-  fab: {
+  menuButton: {
     position: "absolute",
-    right: 16,
-    bottom: DRAWER_HEIGHT + 16,
     backgroundColor: "#fff",
     borderRadius: 24,
     width: 48,
@@ -348,6 +523,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    zIndex: 1,
   },
-  fabText: { fontSize: 20 },
+  menuButtonText: { fontSize: 20 },
+  profileButton: {
+    position: "absolute",
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    width: 48,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    zIndex: 1,
+  },
+  profileButtonText: { fontSize: 20 },
 });

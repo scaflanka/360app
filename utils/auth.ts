@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const API_BASE_URL = "https://api.medi.lk/api";
+export const API_BASE_URL = "https://api.medi.lk/api";
 
 /**
  * Refreshes the access token using the stored refresh token
@@ -131,4 +131,45 @@ export const authenticatedFetch = async (
   }
 
   return response;
+};
+
+/**
+ * Logs out the user by calling the logout API endpoint and clearing all stored tokens
+ */
+export const logout = async (): Promise<void> => {
+  try {
+    const refreshToken = await AsyncStorage.getItem("refreshToken");
+    
+    // Call the logout API endpoint if we have a refresh token
+    if (refreshToken) {
+      try {
+        await fetch(`${API_BASE_URL}/auth/logout`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            accept: "application/json",
+          },
+          body: JSON.stringify({
+            refreshToken: refreshToken,
+          }),
+        });
+      } catch (apiError) {
+        // Continue with token clearing even if API call fails
+        console.error("Error calling logout API:", apiError);
+      }
+    }
+    
+    // Clear tokens regardless of API call success/failure
+    await AsyncStorage.removeItem("authToken");
+    await AsyncStorage.removeItem("refreshToken");
+  } catch (error) {
+    console.error("Error during logout:", error);
+    // Still try to clear tokens even if there's an error
+    try {
+      await AsyncStorage.removeItem("authToken");
+      await AsyncStorage.removeItem("refreshToken");
+    } catch (clearError) {
+      console.error("Error clearing tokens:", clearError);
+    }
+  }
 };
