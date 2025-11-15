@@ -2,8 +2,11 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MapView, { Marker, LatLng , PROVIDER_GOOGLE} from 'react-native-maps';
+import { authenticatedFetch } from '../../utils/auth';
+import { useRouter } from 'expo-router';
 
 const CircleScreen: React.FC = () => {
+  const router = useRouter();
   const [circleName, setCircleName] = useState('');
   const [locationName, setLocationName] = useState('');
   const [metadata, setMetadata] = useState('{}'); // JSON string
@@ -27,13 +30,17 @@ const CircleScreen: React.FC = () => {
     try {
       setLoading(true);
       const token = await AsyncStorage.getItem('authToken');
-      if (!token) throw new Error('No auth token found');
+      if (!token) {
+        Alert.alert('Error', 'No auth token found. Please log in again.');
+        router.replace('/screens/LogInScreen');
+        return;
+      }
 
-      const response = await fetch('https://api.medi.lk/api/circles', {
+      const response = await authenticatedFetch('https://api.medi.lk/api/circles', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          'accept': 'application/json',
         },
         body: JSON.stringify({
           name: circleName,
@@ -46,6 +53,13 @@ const CircleScreen: React.FC = () => {
           },
         }),
       });
+
+      if (response.status === 401) {
+        // Token refresh failed or no valid token
+        Alert.alert('Authentication Error', 'Your session has expired. Please log in again.');
+        router.replace('/screens/LogInScreen');
+        return;
+      }
 
       const data = await response.json();
       if (response.ok) {

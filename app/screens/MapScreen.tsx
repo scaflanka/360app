@@ -1,21 +1,20 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Location from 'expo-location';
-import { router } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import * as Location from "expo-location";
+import { router } from "expo-router";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Dimensions,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  Alert,
-  Platform,
-} from 'react-native';
-import MapView, { Circle, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+} from "react-native";
+import MapView, { Circle, Marker, PROVIDER_GOOGLE } from "react-native-maps";
+import { authenticatedFetch } from "../../utils/auth";
 
-const { height: windowHeight } = Dimensions.get('window');
+const { height: windowHeight } = Dimensions.get("window");
 const DRAWER_HEIGHT = Math.round(windowHeight * 0.5);
 
 interface LocationPoint {
@@ -38,6 +37,22 @@ interface UserLocation {
   longitude: number;
 }
 
+// Helper function to validate coordinates
+const isValidCoordinate = (lat: number, lon: number): boolean => {
+  return (
+    typeof lat === "number" &&
+    typeof lon === "number" &&
+    !isNaN(lat) &&
+    !isNaN(lon) &&
+    isFinite(lat) &&
+    isFinite(lon) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lon >= -180 &&
+    lon <= 180
+  );
+};
+
 const MapScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [location, setLocation] = useState<UserLocation | null>(null);
@@ -58,10 +73,14 @@ const MapScreen: React.FC = () => {
           const pos = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.Highest,
           });
-          setLocation({
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-          });
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          if (isValidCoordinate(lat, lon)) {
+            setLocation({
+              latitude: lat,
+              longitude: lon,
+            });
+          }
         } else {
           Alert.alert("Permission Denied", "Location permission is required.");
         }
@@ -77,10 +96,20 @@ const MapScreen: React.FC = () => {
 
   const loadCircles = async () => {
     try {
-      const token = await AsyncStorage.getItem('authToken');
-      const res = await fetch("https://api.medi.lk/api/circles", {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      const res = await authenticatedFetch("https://api.medi.lk/api/circles", {
+        headers: {
+          "Content-Type": "application/json",
+          accept: "application/json",
+        },
       });
+
+      if (res.status === 401) {
+        // Token refresh failed or no valid token
+        console.warn("Authentication failed, redirecting to login");
+        router.replace("/screens/LogInScreen");
+        return;
+      }
+
       const data = await res.json();
       if (Array.isArray(data)) setCircles(data);
       else if (data?.data) setCircles(data.data);
@@ -99,9 +128,7 @@ const MapScreen: React.FC = () => {
     const dLon = toRad(lon2 - lon1);
     const a =
       Math.sin(dLat / 2) ** 2 +
-      Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) ** 2;
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   };
@@ -111,6 +138,29 @@ const MapScreen: React.FC = () => {
   // -----------------------------
   useEffect(() => {
     let subscription: Location.LocationSubscription | null = null;
+
+    const checkLocationAndCircle = (userLat: number, userLon: number) => {
+      // Check circles safely
+      let insideCircle = false;
+
+      circles.forEach((c) => {
+        (c.Locations ?? []).forEach((loc) => {
+          // Only check distance if both user and circle coordinates are valid
+          if (isValidCoordinate(loc.latitude, loc.longitude)) {
+            const d = getDistance(userLat, userLon, loc.latitude, loc.longitude);
+            const radius = loc.metadata?.radius ?? c.metadata?.radius ?? 100;
+            if (d <= radius) insideCircle = true;
+          }
+        });
+      });
+
+      if (insideCircle && !hasArrived) {
+        Alert.alert("Arrived", "You have entered a circle radius!");
+        setHasArrived(true);
+      } else if (!insideCircle) {
+        setHasArrived(false);
+      }
+    };
 
     const startWatch = async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -122,31 +172,24 @@ const MapScreen: React.FC = () => {
           if (!pos?.coords) return;
           const userLat = pos.coords.latitude;
           const userLon = pos.coords.longitude;
-          setLocation({ latitude: userLat, longitude: userLon });
 
-          // Check circles safely
-          let insideCircle = false;
-          circles.forEach(c => {
-            (c.Locations ?? []).forEach(loc => {
-              const d = getDistance(userLat, userLon, loc.latitude, loc.longitude);
-              const radius = loc.metadata?.radius ?? c.metadata?.radius ?? 100;
-              if (d <= radius) insideCircle = true;
-            });
-          });
-
-          if (insideCircle && !hasArrived) {
-            Alert.alert("Arrived", "You have entered a circle radius!");
-            setHasArrived(true);
-          } else if (!insideCircle) {
-            setHasArrived(false);
+          // Only update location if coordinates are valid
+          if (isValidCoordinate(userLat, userLon)) {
+            setLocation({ latitude: userLat, longitude: userLon });
+            checkLocationAndCircle(userLat, userLon);
+          } else {
+            console.warn("Invalid coordinates received:", userLat, userLon);
+            return;
           }
         }
       );
     };
     startWatch();
 
-    return () => subscription?.remove();
-  }, [circles]);
+    return () => {
+      subscription?.remove();
+    };
+  }, [circles, hasArrived]);
 
   // -----------------------------
   // Drawer toggle
@@ -162,7 +205,7 @@ const MapScreen: React.FC = () => {
   // -----------------------------
   // Loading screen
   // -----------------------------
-  if (loading || !location) {
+  if (loading || !location || !isValidCoordinate(location.latitude, location.longitude)) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#2563eb" />
@@ -188,33 +231,37 @@ const MapScreen: React.FC = () => {
       >
         <Marker coordinate={location} title="You are here" pinColor="black" />
 
-        {circles.map(c =>
-          (c.Locations ?? []).map((loc, idx) => {
-            const key = `${c.id}-${loc.id ?? idx}`;
-            const radius = loc.metadata?.radius ?? c.metadata?.radius ?? 100;
+        {circles.map((c) =>
+          (c.Locations ?? [])
+            .filter((loc) => isValidCoordinate(loc.latitude, loc.longitude))
+            .map((loc, idx) => {
+              const key = `${c.id}-${loc.id ?? idx}`;
+              const radius = loc.metadata?.radius ?? c.metadata?.radius ?? 100;
 
-            return (
-              <React.Fragment key={key}>
-                <Marker
-                  coordinate={{ latitude: loc.latitude, longitude: loc.longitude }}
-                  title={loc.name ?? c.name}
-                  pinColor="blue"
-                />
-                <Circle
-                  center={{ latitude: loc.latitude, longitude: loc.longitude }}
-                  radius={radius}
-                  strokeWidth={2}
-                  strokeColor="rgba(0,112,255,0.8)"
-                  fillColor="rgba(0,112,255,0.2)"
-                />
-              </React.Fragment>
-            );
-          })
+              return (
+                <React.Fragment key={key}>
+                  <Marker
+                    coordinate={{ latitude: loc.latitude, longitude: loc.longitude }}
+                    title={loc.name ?? c.name}
+                    pinColor="blue"
+                  />
+                  <Circle
+                    center={{ latitude: loc.latitude, longitude: loc.longitude }}
+                    radius={radius}
+                    strokeWidth={2}
+                    strokeColor="rgba(0,112,255,0.8)"
+                    fillColor="rgba(0,112,255,0.2)"
+                  />
+                </React.Fragment>
+              );
+            })
         )}
       </MapView>
 
       <Animated.View style={[styles.drawer, { transform: [{ translateY: drawerAnim }] }]}>
-        <View style={styles.drawerHandleContainer}><View style={styles.handle} /></View>
+        <View style={styles.drawerHandleContainer}>
+          <View style={styles.handle} />
+        </View>
         <View style={styles.drawerContent}>
           <Text style={styles.drawerTitle}>Circles</Text>
           <Text style={styles.drawerSub}>You have {circles.length} circle(s)</Text>
@@ -262,7 +309,13 @@ const styles = StyleSheet.create({
   drawerContent: { padding: 16 },
   drawerTitle: { fontSize: 18, fontWeight: "700" },
   drawerSub: { marginTop: 4, color: "#6b7280" },
-  drawerButton: { marginTop: 16, backgroundColor: "#2563eb", padding: 12, borderRadius: 8, alignItems: "center" },
+  drawerButton: {
+    marginTop: 16,
+    backgroundColor: "#2563eb",
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
   drawerButtonText: { color: "#fff", fontWeight: "700" },
   closeButton: { marginTop: 12, alignItems: "center" },
   closeButtonText: { color: "#2563eb", fontWeight: "700" },
