@@ -9,7 +9,9 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "prebuild:android": "npx expo prebuild --platform android --clean"
+    "prebuild:android": "npx expo prebuild --platform android --clean",
+    "release-android-abb": "cd android && rm -rf app/.cxx app/build build && ./gradlew clean && cd .. && npx react-native build-android --mode=release",
+    "release-android-apk": "npx expo run:android --variant release"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -48,6 +50,7 @@
     "react-native-worklets": "0.5.1"
   },
   "devDependencies": {
+    "@react-native-community/cli": "latest",
     "@types/react": "~19.1.0",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",

@@ -2,61 +2,82 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export const API_BASE_URL = "https://api.medi.lk/api";
 
+// Token refresh lock to prevent concurrent refresh attempts
+let refreshPromise: Promise<string | null> | null = null;
+let isRefreshing = false;
+
 /**
  * Refreshes the access token using the stored refresh token
+ * Uses a lock mechanism to prevent concurrent refresh attempts
  * @returns The new access token or null if refresh fails
  */
 export const refreshAccessToken = async (): Promise<string | null> => {
-  try {
-    const refreshToken = await AsyncStorage.getItem("refreshToken");
+  // If a refresh is already in progress, wait for it to complete
+  if (isRefreshing && refreshPromise) {
+    console.log("Token refresh already in progress, waiting...");
+    return refreshPromise;
+  }
 
-    if (!refreshToken) {
-      console.warn("No refresh token found");
-      return null;
-    }
+  // Start a new refresh
+  isRefreshing = true;
+  refreshPromise = (async () => {
+    try {
+      const refreshToken = await AsyncStorage.getItem("refreshToken");
 
-    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        accept: "application/json",
-      },
-      body: JSON.stringify({
-        refreshToken: refreshToken,
-      }),
-    });
-
-    const data = await response.json();
-
-    if (response.ok && data.token) {
-      // Store the new access token
-      await AsyncStorage.setItem("authToken", data.token);
-
-      // Store the new refresh token if provided
-      if (data.refreshToken) {
-        await AsyncStorage.setItem("refreshToken", data.refreshToken);
+      if (!refreshToken) {
+        console.warn("No refresh token found");
+        return null;
       }
 
-      console.log("Token refreshed successfully");
-      return data.token;
-    } else {
-      console.error("Token refresh failed:", data);
+      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify({
+          refreshToken: refreshToken,
+        }),
+      });
 
-      // If refresh fails, clear tokens
+      const data = await response.json();
+
+      if (response.ok && data.token) {
+        // Store the new access token
+        await AsyncStorage.setItem("authToken", data.token);
+
+        // Store the new refresh token if provided
+        if (data.refreshToken) {
+          await AsyncStorage.setItem("refreshToken", data.refreshToken);
+        }
+
+        console.log("Token refreshed successfully");
+        return data.token;
+      } else {
+        console.error("Token refresh failed:", data);
+
+        // If refresh fails, clear tokens
+        await AsyncStorage.removeItem("authToken");
+        await AsyncStorage.removeItem("refreshToken");
+
+        return null;
+      }
+    } catch (error) {
+      console.error("Error refreshing token:", error);
+
+      // Clear tokens on error
       await AsyncStorage.removeItem("authToken");
       await AsyncStorage.removeItem("refreshToken");
 
       return null;
+    } finally {
+      // Reset the lock
+      isRefreshing = false;
+      refreshPromise = null;
     }
-  } catch (error) {
-    console.error("Error refreshing token:", error);
+  })();
 
-    // Clear tokens on error
-    await AsyncStorage.removeItem("authToken");
-    await AsyncStorage.removeItem("refreshToken");
-
-    return null;
-  }
+  return refreshPromise;
 };
 
 /**

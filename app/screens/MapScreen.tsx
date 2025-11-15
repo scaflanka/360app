@@ -60,6 +60,9 @@ const isValidCoordinate = (lat: number, lon: number): boolean => {
   );
 };
 
+// Test mode configuration
+const TEST_MODE = false; // Set to true to enable test mode (for testing other features)
+
 const MapScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [loadingCircles, setLoadingCircles] = useState(false);
@@ -68,6 +71,10 @@ const MapScreen: React.FC = () => {
   const [hasArrived, setHasArrived] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const reachedLocationsRef = useRef<Set<string>>(new Set());
+  const alertedLocationsRef = useRef<Set<string>>(new Set()); // Track locations we've already shown alerts for
+  const markingLocationsRef = useRef<Set<string>>(new Set()); // Track locations currently being marked (to prevent concurrent calls)
+  const [testMode, setTestMode] = useState(TEST_MODE);
+  const mapRef = useRef<MapView | null>(null);
 
   const drawerAnim = useRef(new Animated.Value(DRAWER_HEIGHT)).current;
   const [isOpen, setIsOpen] = useState(false);
@@ -111,21 +118,22 @@ const MapScreen: React.FC = () => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === "granted") {
-          const pos = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Highest,
-          });
-          const lat = pos.coords.latitude;
-          const lon = pos.coords.longitude;
-          if (isValidCoordinate(lat, lon)) {
-            setLocation({
-              latitude: lat,
-              longitude: lon,
+        // Always use real location
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status === "granted") {
+            const pos = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Highest,
             });
-          }
-        } else {
-          Alert.alert("Permission Denied", "Location permission is required.");
+            const lat = pos.coords.latitude;
+            const lon = pos.coords.longitude;
+            if (isValidCoordinate(lat, lon)) {
+              setLocation({
+                latitude: lat,
+                longitude: lon,
+              });
+            }
+          } else {
+            Alert.alert("Permission Denied", "Location permission is required.");
         }
       } catch (e) {
         console.warn("Location error:", e);
@@ -190,10 +198,13 @@ const MapScreen: React.FC = () => {
   ) => {
     const locationKey = `${circleId}-${locationId}`;
     
-    // Skip if already reached
-    if (reachedLocationsRef.current.has(locationKey)) {
+    // Skip if already reached or currently being marked
+    if (reachedLocationsRef.current.has(locationKey) || markingLocationsRef.current.has(locationKey)) {
       return;
     }
+
+    // Mark as "in progress" immediately to prevent concurrent calls
+    markingLocationsRef.current.add(locationKey);
 
     try {
       const response = await authenticatedFetch(
@@ -213,6 +224,8 @@ const MapScreen: React.FC = () => {
       );
 
       if (response.status === 401) {
+        // Remove from marking set on error so it can be retried
+        markingLocationsRef.current.delete(locationKey);
         router.replace("/screens/LogInScreen");
         return;
       }
@@ -224,9 +237,16 @@ const MapScreen: React.FC = () => {
       } else {
         const data = await response.json();
         console.error("Failed to mark location as reached:", data);
+        // Remove from marking set on error so it can be retried
+        markingLocationsRef.current.delete(locationKey);
       }
     } catch (error) {
       console.error("Error marking location as reached:", error);
+      // Remove from marking set on error so it can be retried
+      markingLocationsRef.current.delete(locationKey);
+    } finally {
+      // Always remove from marking set when done (success or failure)
+      markingLocationsRef.current.delete(locationKey);
     }
   };
 
@@ -239,6 +259,8 @@ const MapScreen: React.FC = () => {
     const checkLocationAndCircle = (userLat: number, userLon: number) => {
       // Check circles safely
       let insideCircle = false;
+      let shouldShowAlert = false;
+      let alertCircleName = "";
 
       circles.forEach((c) => {
         // Get first available location for each circle
@@ -265,21 +287,41 @@ const MapScreen: React.FC = () => {
             
             // Only mark location as reached if user is not the creator
             if (!isCreator && firstLocation.id) {
+              const locationKey = `${c.id}-${firstLocation.id}`;
+              
+              // Check if we've already reached this location
+              const alreadyReached = reachedLocationsRef.current.has(locationKey);
+              // Check if we've already shown an alert for this location
+              const alreadyAlerted = alertedLocationsRef.current.has(locationKey);
+              
+              // Mark location as reached (function will skip if already reached)
               markLocationReached(
                 c.id,
                 firstLocation.id,
                 userLat,
                 userLon
               );
+              
+              // Show alert only if we haven't shown it for this location yet
+              // Check both the reached locations ref and the alerted locations ref
+              if (!alreadyReached && !alreadyAlerted && !hasArrived) {
+                shouldShowAlert = true;
+                alertCircleName = firstLocation.name ?? c.name ?? "Unknown Circle";
+                // Mark this location as alerted immediately to prevent duplicate alerts
+                alertedLocationsRef.current.add(locationKey);
+              }
             }
           }
         }
       });
 
-      if (insideCircle && !hasArrived) {
-        Alert.alert("Arrived", "You have entered a circle radius!");
+      // Show alert only once per location entry
+      if (shouldShowAlert) {
+        Alert.alert("Arrived", `You have entered a circle radius: ${alertCircleName}`);
         setHasArrived(true);
       } else if (!insideCircle) {
+        // Reset hasArrived when leaving all circles
+        // Note: We don't clear alertedLocationsRef so alerts won't show again for the same location
         setHasArrived(false);
       }
     };
@@ -311,7 +353,7 @@ const MapScreen: React.FC = () => {
     return () => {
       subscription?.remove();
     };
-  }, [circles, hasArrived, currentUserId]);
+  }, [circles, hasArrived, currentUserId, location]);
 
   // -----------------------------
   // Drawer toggle
@@ -374,16 +416,38 @@ const MapScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <MapView
+        ref={mapRef}
         style={styles.map}
         provider={PROVIDER_GOOGLE}
-        region={{
+        initialRegion={{
           latitude: location.latitude,
           longitude: location.longitude,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
+          latitudeDelta: 0.005, // More zoomed in (was 0.05)
+          longitudeDelta: 0.005, // More zoomed in (was 0.05)
+        }}
+        showsUserLocation={false}
+        followsUserLocation={false}
+        onMapReady={() => {
+          // Ensure map is ready before animating
+          if (mapRef.current && location) {
+            mapRef.current.animateToRegion({
+              latitude: location.latitude,
+              longitude: location.longitude,
+              latitudeDelta: 0.005,
+              longitudeDelta: 0.005,
+            }, 0);
+          }
         }}
       >
-        <Marker coordinate={location} title="You are here" pinColor="black" />
+        <Marker 
+          coordinate={{
+            latitude: location.latitude,
+            longitude: location.longitude,
+          }} 
+          title="You are here" 
+          pinColor="black"
+          tracksViewChanges={false}
+        />
 
         {circles.map((c) => {
           // Get first available location for each circle
@@ -462,6 +526,13 @@ const MapScreen: React.FC = () => {
       >
         <Text style={styles.profileButtonText}>👤</Text>
       </TouchableOpacity>
+
+      {/* Test Mode Indicator */}
+      {testMode && (
+        <View style={[styles.testModeIndicator, { top: insets.top + 8, left: 80 }]}>
+          <Text style={styles.testModeText}>🧪 TEST MODE</Text>
+        </View>
+      )}
 
       <CirclesModal
         isOpen={isCirclesModalOpen}
@@ -546,4 +617,22 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   profileButtonText: { fontSize: 20 },
+  testModeIndicator: {
+    position: "absolute",
+    backgroundColor: "#fbbf24",
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    zIndex: 1,
+  },
+  testModeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#78350f",
+  },
 });
