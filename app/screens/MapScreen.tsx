@@ -68,10 +68,8 @@ const MapScreen: React.FC = () => {
   const [loadingCircles, setLoadingCircles] = useState(false);
   const [location, setLocation] = useState<UserLocation | null>(null);
   const [circles, setCircles] = useState<CircleData[]>([]);
-  const [hasArrived, setHasArrived] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const reachedLocationsRef = useRef<Set<string>>(new Set());
-  const alertedLocationsRef = useRef<Set<string>>(new Set()); // Track locations we've already shown alerts for
   const markingLocationsRef = useRef<Set<string>>(new Set()); // Track locations currently being marked (to prevent concurrent calls)
   const [testMode, setTestMode] = useState(TEST_MODE);
   const mapRef = useRef<MapView | null>(null);
@@ -261,10 +259,6 @@ const MapScreen: React.FC = () => {
 
     const checkLocationAndCircle = (userLat: number, userLon: number) => {
       // Check circles safely
-      let insideCircle = false;
-      let shouldShowAlert = false;
-      let alertCircleName = "";
-
       circles.forEach((c) => {
         // Get first available location for each circle
         const firstLocation = (c.Locations ?? []).find((loc) =>
@@ -276,42 +270,16 @@ const MapScreen: React.FC = () => {
           const radius = firstLocation.metadata?.radius ?? c.metadata?.radius ?? 100;
 
           if (d <= radius) {
-            insideCircle = true;
-
             // Mark location as reached for all users (creator/admin/member)
             if (firstLocation.id) {
               const locationKey = `${c.id}-${firstLocation.id}`;
 
-              // Check if we've already reached this location
-              const alreadyReached = reachedLocationsRef.current.has(locationKey);
-              // Check if we've already shown an alert for this location
-              const alreadyAlerted = alertedLocationsRef.current.has(locationKey);
-
               // Mark location as reached (function will skip if already reached)
               markLocationReached(c.id, firstLocation.id, userLat, userLon);
-
-              // Show alert only if we haven't shown it for this location yet
-              // Check both the reached locations ref and the alerted locations ref
-              if (!alreadyReached && !alreadyAlerted && !hasArrived) {
-                shouldShowAlert = true;
-                alertCircleName = firstLocation.name ?? c.name ?? "Unknown Circle";
-                // Mark this location as alerted immediately to prevent duplicate alerts
-                alertedLocationsRef.current.add(locationKey);
-              }
             }
           }
         }
       });
-
-      // Show alert only once per location entry
-      if (shouldShowAlert) {
-        Alert.alert("Arrived", `You have entered a circle radius: ${alertCircleName}`);
-        setHasArrived(true);
-      } else if (!insideCircle) {
-        // Reset hasArrived when leaving all circles
-        // Note: We don't clear alertedLocationsRef so alerts won't show again for the same location
-        setHasArrived(false);
-      }
     };
 
     const startWatch = async () => {
@@ -341,7 +309,7 @@ const MapScreen: React.FC = () => {
     return () => {
       subscription?.remove();
     };
-  }, [circles, hasArrived, currentUserId, location]);
+  }, [circles, currentUserId, location]);
 
   // -----------------------------
   // Drawer toggle
