@@ -123,7 +123,7 @@ const CircleScreen: React.FC = () => {
           longitude: 79.8612,
           latitudeDelta: 0.01,
           longitudeDelta: 0.01,
-        }}
+        }}r
         onPress={(e) => setLocation(e.nativeEvent.coordinate)}
       >
         {location && <Marker coordinate={location} title="Selected Location" />}

@@ -1,12 +1,11 @@
 // import {
-//   GoogleSignin,
-//   GoogleSigninButton,
-//   isSuccessResponse,
-//   statusCodes,
+//     GoogleSignin,
+//     GoogleSigninButton,
+//     isSuccessResponse,
+//     statusCodes,
 // } from '@react-native-google-signin/google-signin';
 import React, { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { registerDeviceAndGetFCMToken, saveFCMTokenToAPI } from '@/utils/permissions';
@@ -15,119 +14,132 @@ import { registerDeviceAndGetFCMToken, saveFCMTokenToAPI } from '@/utils/permiss
 
 // Using expo-router for navigation; no typed stack here
 // GoogleSignin.configure({
-//   "webClientId": '367419583503-3lgmgp9ph4pm32n5jjnnqfesi2ku8f87.apps.googleusercontent.com'
-
-
+//     "webClientId": '367419583503-2ot110t4mfr19aiftiqkp5phojup2nls.apps.googleusercontent.com'
 // });
-
-
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: '#7C3AED',
     },
     contentContainer: {
         flexGrow: 1,
-        justifyContent: 'center',
         paddingHorizontal: 24,
-        paddingVertical: 32,
+        paddingTop: 60,
+        paddingBottom: 32,
+    },
+    backButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 40,
+    },
+    backButtonText: {
+        color: '#fff',
+        fontSize: 40,
+        fontWeight: '300',
     },
     header: {
-        marginBottom: 32,
+        marginBottom: 60,
         alignItems: 'center',
     },
     headerText: {
-        fontSize: 36,
+        fontSize: 32,
         fontWeight: 'bold',
-        color: '#2563eb',
+        color: '#fff',
+        textAlign: 'center',
+        lineHeight: 40,
     },
     formContainer: {
-        width: '100%',
+        flex: 1,
+        justifyContent: 'space-between',
+    },
+    inputContainer: {
+        marginBottom: 24,
     },
     inputGroup: {
         marginBottom: 20,
     },
-    label: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#374151',
-        marginBottom: 8,
-    },
     input: {
-        borderWidth: 1,
-        borderColor: '#d1d5db',
-        borderRadius: 8,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        fontSize: 16,
-        color: '#1f2937',
-    },
-    loginButton: {
-        backgroundColor: '#2563eb',
-        borderRadius: 8,
-        paddingVertical: 12,
-        alignItems: 'center',
-        marginBottom: 16,
-        marginTop: 8,
-    },
-    loginButtonText: {
+        borderWidth: 0,
+        borderColor: 'rgba(255, 255, 255, 0.3)',
+        borderRadius: 25,
+        paddingHorizontal: 24,
+        paddingVertical: 16,
+        fontSize: 30,
         color: '#fff',
-        fontWeight: 'bold',
-        fontSize: 16,
+        backgroundColor: 'transparent',
+        textAlign: 'center',           // centers typed text & placeholder horizontally
+        textAlignVertical: 'center',   // centers vertically (Android only)
     },
-    loginButtonDisabled: {
-        opacity: 0.6,
+    utPlaceholder: {
+        color: 'rgba(255, 255, 255, 0.5)',
+    },
+    bottomContainer: {
+        marginTop: 'auto',
+    },
+    continueButton: {
+        backgroundColor: 'rgba(255, 255, 255, 0.3)',
+        borderRadius: 25,
+        paddingVertical: 16,
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    continueButtonText: {
+        color: '#8B5CF6',
+        fontWeight: 'bold',
+        fontSize: 18,
+    },
+    continueButtonActive: {
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    },
+    continueButtonTextActive: {
+        color: '#8B5CF6',
+    },
+    phoneSignInText: {
+        color: '#D4FF00',
+        textAlign: 'center',
+        fontSize: 16,
+        fontWeight: '600',
     },
     forgotPasswordButton: {
         alignItems: 'center',
-        marginBottom: 24,
-        marginTop: 8,
+        marginTop: 16,
     },
     forgotPasswordText: {
-        color: '#2563eb',
+        color: 'rgba(255, 255, 255, 0.8)',
         fontWeight: '600',
         fontSize: 14,
     },
     dividerContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 24,
+        marginVertical: 24,
     },
     dividerLine: {
         flex: 1,
         height: 1,
-        backgroundColor: '#d1d5db',
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
     },
     dividerText: {
         marginHorizontal: 12,
-        color: '#6b7280',
-        fontSize: 14,
-    },
-    googleButton: {
-        borderWidth: 1,
-        borderColor: '#d1d5db',
-        borderRadius: 8,
-        paddingVertical: 12,
-        alignItems: 'center',
-        marginBottom: 24,
-    },
-    googleButtonText: {
-        color: '#1f2937',
-        fontWeight: '600',
+        color: 'rgba(255, 255, 255, 0.6)',
         fontSize: 14,
     },
     signUpContainer: {
         flexDirection: 'row',
         justifyContent: 'center',
         alignItems: 'center',
+        marginTop: 16,
     },
     signUpText: {
-        color: '#6b7280',
+        color: 'rgba(255, 255, 255, 0.8)',
         fontSize: 14,
     },
     signUpLink: {
-        color: '#2563eb',
+        color: '#D4FF00',
         fontWeight: 'bold',
         fontSize: 14,
         marginLeft: 4,
@@ -135,12 +147,14 @@ const styles = StyleSheet.create({
 })
 
 const LogInScreen = () => {
+
+    
     const router = useRouter();
     const [email, setEmail] = useState('')
     const [userName, setUserName] = useState('')
     const [loading, setLoading] = useState(false)
     // userInfo can be either an object (user data) or null when not signed in
-    // const [userInfo, setUserInfo] = useState<Record<string, any> | null>(null);
+    const [userInfo, setUserInfo] = useState<Record<string, any> | null>(null);
 
     const handleLogin = async () => {
         if (email && userName) {
@@ -201,92 +215,168 @@ const LogInScreen = () => {
         }
     };
 
+    // const handleGoogleSignIn = async () => {
+    //     try {
+    //         setLoading(true);
+
+    //         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+    //         const userInfo = await GoogleSignin.signIn();
+    //         console.log("Google User Info:", userInfo);
+
+    //         // Correct ID token path
+    //         const idToken = userInfo.idToken;
+    //         console.log("Google ID Token:", idToken);
+
+    //         if (!idToken) {
+    //             alert("Failed to get Google ID Token. Check your Google config.");
+    //             setLoading(false);
+    //             return;
+    //         }
+
+    //         // API request
+    //         const response = await fetch("https://api.medi.lk/api/auth/google", {
+    //             method: "POST",
+    //             headers: {
+    //                 "accept": "application/json",
+    //                 "Content-Type": "application/json",
+    //             },
+    //             body: JSON.stringify({ idToken }),
+    //         });
+
+    //         const data = await response.json();
+    //         console.log("API Response:", data);
+
+    //         if (response.ok) {
+    //             await AsyncStorage.setItem("authToken", data.token);
+    //             await AsyncStorage.setItem("refreshToken", data.refreshToken);
+
+    //             try {
+    //                 const fcmToken = await registerDeviceAndGetFCMToken();
+    //                 if (fcmToken) await saveFCMTokenToAPI(fcmToken);
+    //             } catch (err) {
+    //                 console.log("FCM error:", err);
+    //             }
+
+    //             alert("Google Login Successful!");
+    //             router.replace("/screens/MapScreen");
+    //         } else {
+    //             alert("Google Login Failed: " + (data.message || "Invalid token"));
+    //         }
+
+    //     } catch (error) {
+    //         console.log("Full Google Sign-In Error:", error);
+    //         alert("Google Login Error: " + error.message);
+    //     } finally {
+    //         setLoading(false);
+    //     }
+    // };
 
     // (Optional) Google Sign-In handlers removed to reduce commented-out code
 
+    const isFormValid = email.length > 0 && userName.length > 0;
 
     return (
-        <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+        <ScrollView
+            style={styles.container}
+            contentContainerStyle={styles.contentContainer}
+            keyboardShouldPersistTaps="handled"
+        >
+            {/* Back Button */}
+            <TouchableOpacity style={styles.backButton}>
+                <Text style={styles.backButtonText}>‹</Text>
+            </TouchableOpacity>
+
             {/* Header */}
             <View style={styles.header}>
-                <Text style={styles.headerText}>Location</Text>
-                <Text style={styles.headerText}>Tracker</Text>
+                <Text style={styles.headerText}>Welcome back!{'\n'}Enter your email</Text>
             </View>
 
             {/* Form Container */}
             <View style={styles.formContainer}>
-                {/* Email Input */}
-                <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Email Address</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder='Enter your email'
-                        placeholderTextColor='#999'
-                        value={email}
-                        onChangeText={setEmail}
-                        keyboardType='email-address'
-                        autoCapitalize='none'
-                    />
+                <View style={styles.inputContainer}>
+                    {/* Email Input */}
+                    <View style={styles.inputGroup}>
+                        <TextInput
+                            style={styles.input}
+                            placeholder='Email'
+                            placeholderTextColor='rgba(255, 255, 255, 0.5)'
+                            value={email}
+                            onChangeText={setEmail}
+                            keyboardType='email-address'
+                            autoCapitalize='none'
+                        />
+                    </View>
+
+                    {/* Username Input */}
+                    <View style={styles.inputGroup}>
+                        <TextInput
+                            style={styles.input}
+                            placeholder='User Name'
+                            placeholderTextColor='rgba(255, 255, 255, 0.5)'
+                            value={userName}
+                            onChangeText={setUserName}
+                            autoCapitalize='none'
+                        />
+                    </View>
                 </View>
 
-                {/* Password Input */}
-                <View style={styles.inputGroup}>
-                    <Text style={styles.label}>User Name</Text>
-                    <TextInput
-                        style={styles.input}
-                        placeholder='Enter your user name'
-                        placeholderTextColor='#999'
-                        value={userName}
-                        onChangeText={setUserName}
-                        autoCapitalize='none'
-
-                    />
-                </View>
-
-                {/* Login Button */}
-                <TouchableOpacity 
-                    style={[styles.loginButton, loading && styles.loginButtonDisabled]} 
-                    onPress={handleLogin}
-                    disabled={loading}
-                >
-                    {loading ? (
-                        <ActivityIndicator color="#fff" />
-                    ) : (
-                        <Text style={styles.loginButtonText}>Login</Text>
-                    )}
-                </TouchableOpacity>
-
-                {/* 
-        <GoogleSigninButton
-          style={{ width: '100%', height: 48, marginBottom: 16 }}
-          size={GoogleSigninButton.Size.Wide}
-          color={GoogleSigninButton.Color.Dark}
-          onPress={handleGoogleSignIn}
-        /> */}
-
-
-
-
-                {/* Forgot Password */}
-                <TouchableOpacity style={styles.forgotPasswordButton}>
-                    <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-                </TouchableOpacity>
-
-                {/* Divider */}
-                <View style={styles.dividerContainer}>
-                    <View style={styles.dividerLine} />
-                    <Text style={styles.dividerText}>OR</Text>
-                    <View style={styles.dividerLine} />
-                </View>
-
-
-
-                {/* Sign Up Link */}
-                <View style={styles.signUpContainer}>
-                    <Text style={styles.signUpText}>Dont have an account?</Text>
-                    <TouchableOpacity>
-                        <Text style={styles.signUpLink}>Sign Up</Text>
+                {/* Bottom Section */}
+                <View style={styles.bottomContainer}>
+                    {/* Continue Button */}
+                    <TouchableOpacity
+                        style={[
+                            styles.continueButton,
+                            isFormValid && styles.continueButtonActive
+                        ]}
+                        onPress={handleLogin}
+                        disabled={loading || !isFormValid}
+                    >
+                        {loading ? (
+                            <ActivityIndicator color={isFormValid ? "#8B5CF6" : "#fff"} />
+                        ) : (
+                            <Text style={[
+                                styles.continueButtonText,
+                                isFormValid && styles.continueButtonTextActive
+                            ]}>
+                                Continue
+                            </Text>
+                        )}
                     </TouchableOpacity>
+
+                    {/* 
+                        <GoogleSigninButton
+                            style={{ width: '100%', height: 48, marginBottom: 16 }}
+                            size={GoogleSigninButton.Size.Wide}
+                            color={GoogleSigninButton.Color.Dark}
+                            onPress={handleGoogleSignIn}
+                        /> 
+                        */}
+
+                    {/* Phone Sign In */}
+                    <TouchableOpacity onPress={() => router.push('/screens/MobileLogIn')}>
+                        <Text style={styles.phoneSignInText}>Sign in with phone number</Text>
+                    </TouchableOpacity>
+
+                    {/* Forgot Password */}
+                    {/* <TouchableOpacity style={styles.forgotPasswordButton}>
+                            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+                        </TouchableOpacity> */}
+
+                    {/* Divider */}
+                    {/* <View style={styles.dividerContainer}>
+                            <View style={styles.dividerLine} />
+                            <Text style={styles.dividerText}>OR</Text>
+                            <View style={styles.dividerLine} />
+                        </View> */}
+
+                    {/* Sign Up Link
+                        <View style={styles.signUpContainer}>
+                            <Text style={styles.signUpText}>Don't have an account?</Text>
+                            <TouchableOpacity>
+                                <Text style={styles.signUpLink}>Sign Up</Text>
+                            </TouchableOpacity>
+                        </View> */}
                 </View>
             </View>
         </ScrollView>
